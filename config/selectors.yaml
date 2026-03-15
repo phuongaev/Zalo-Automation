@@ -1,0 +1,71 @@
+selectors:
+  home_feed_markers:
+    - resourceId: "com.zing.zalo:id/maintab_root_layout"
+    - resourceId: "com.zing.zalo:id/maintab_message"
+    - resourceId: "com.zing.zalo:id/maintab_timeline"
+    - text: "Tin nhắn"
+  login_markers:
+    - text: "Đăng nhập"
+    - text: "Số điện thoại"
+    - text: "Số điện thoại hoặc tên đăng nhập"
+    - text: "Mật khẩu"
+  welcome_login_button:
+    - resourceId: "com.zing.zalo:id/btnLogin"
+    - text: "Đăng nhập"
+  welcome_register_button:
+    - resourceId: "com.zing.zalo:id/btnRegisterUsingPhoneNumber"
+    - text: "Tạo tài khoản mới"
+  login_phone_input:
+    - resourceId: "com.zing.zalo:id/etPhoneNumber"
+    - text: "Số điện thoại"
+    - text: "Số điện thoại hoặc tên đăng nhập"
+    - className: "android.widget.EditText"
+  login_password_input:
+    - resourceId: "com.zing.zalo:id/etPass"
+    - text: "Mật khẩu"
+    - className: "android.widget.EditText"
+  login_submit_button:
+    - resourceId: "com.zing.zalo:id/btnLogin"
+    - text: "Đăng nhập"
+    - text: "Tiếp tục"
+    - text: "Đăng nhập với mật khẩu"
+  timeline_tab:
+    - resourceId: "com.zing.zalo:id/maintab_timeline"
+    - text: "Nhật ký"
+  create_post_button:
+    - resourceId: "com.zing.zalo:id/action_bar_new_post_btn"
+    - description: "Đăng bài"
+    - text: "Đăng bài"
+  post_text_input:
+    - className: "android.widget.EditText"
+  add_photo_button:
+    - resourceId: "com.zing.zalo:id/btn_post_attach_photo"
+    - resourceId: "com.zing.zalo:id/tv_select_album"
+    - text: "Album"
+    - text: "Ảnh"
+    - description: "Ảnh"
+  quick_picker_container:
+    - resourceId: "com.zing.zalo:id/quick_picker_container"
+    - resourceId: "com.zing.zalo:id/media_picker_layout"
+    - resourceId: "com.zing.zalo:id/recycler_view"
+  gallery_first_item:
+    - resourceId: "com.zing.zalo:id/recycler_view"
+    - className: "android.widget.FrameLayout"
+  photo_button_on_timeline:
+    - text: "Ảnh"
+    - description: "Ảnh"
+  gallery_view_marker:
+    - textContains: "Tất cả"
+  gallery_confirm_button:
+    - resourceId: "com.zing.zalo:id/btn_done"
+  layout_popup_close:
+    - text: "✕"
+    - resourceId: "com.zing.zalo:id/btn_close"
+    - description: "Đóng"
+  compose_with_images_marker:
+    - text: "Thêm ảnh"
+    - text: "+ Thêm ảnh"
+  submit_post_button:
+    - resourceId: "com.zing.zalo:id/bt_post_feed"
+    - text: "Đăng"
+    - description: "Đăng"

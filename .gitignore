@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.pyc
+logs/
+tmp/
+screenshots/
+data/*.db
+config/accounts.yaml
+.claude/

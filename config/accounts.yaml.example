@@ -1,0 +1,33 @@
+global:
+  dry_run: false
+  request_timeout_seconds: 45
+  local_tmp_root: tmp
+  screenshots_root: screenshots
+  log_dir: logs
+  zalo_package: com.zing.zalo
+  emulator_media_dir: /sdcard/DCIM/Camera
+  adb_path: D:\LDPlayer\LDPlayer3.0\adb.exe
+  ldconsole_path: D:\LDPlayer\LDPlayer3.0\ldconsole.exe
+  launch_wait_seconds: 35
+  after_launch_connect_seconds: 10
+  batch_size: 3
+  stop_emulator_after_run: true
+  keep_emulator_open_on_failure: true
+  tap_delay_seconds: 0.6
+  type_delay_seconds: 0.8
+  swipe_delay_seconds: 0.8
+  step_delay_seconds: 1.2
+  content_api:
+    url: https://example.com/webhook/your-api
+    method: GET
+    headers: {}
+    payload: {}
+accounts:
+  - account_id: zalo02
+    enabled: true
+    emulator_name: leidian2
+    emulator_index: 2
+    adb_serial: 127.0.0.1:5559
+    login:
+      phone: "YOUR_PHONE"
+      password: "YOUR_PASSWORD"

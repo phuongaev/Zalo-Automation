@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "zalo-post-scheduler"
+version = "0.1.0"
+description = "Scheduled Zalo wall posting orchestrator for LDPlayer emulators"
+requires-python = ">=3.10"
+dependencies = [
+  "fastapi>=0.115.0",
+  "uvicorn[standard]>=0.30.0",
+  "apscheduler>=3.10.4",
+  "pydantic>=2.8.0",
+  "pydantic-settings>=2.3.0",
+  "pyyaml>=6.0.1",
+  "requests>=2.32.0",
+  "uiautomator2>=3.2.0",
+  "jinja2>=3.1.4",
+  "python-multipart>=0.0.9"
+]
+
+[tool.setuptools]
+packages = ["app"]
+include-package-data = true
+
+[tool.setuptools.package-data]
+app = ["templates/*.html"]
+
+[tool.uvicorn]
+factory = false
