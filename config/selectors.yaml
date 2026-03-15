@@ -59,6 +59,7 @@ selectors:
   gallery_confirm_button:
     - resourceId: "com.zing.zalo:id/btn_done"
   layout_popup_close:
+    - resourceId: "com.zing.zalo:id/imv_close"
     - text: "✕"
     - resourceId: "com.zing.zalo:id/btn_close"
     - description: "Đóng"

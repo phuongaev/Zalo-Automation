@@ -313,19 +313,24 @@ class ZaloAutomation:
     # Dismiss layout popup
     # ------------------------------------------------------------------
     def _dismiss_layout_popup(self, adb=None) -> None:
-        """Dismiss the 'Chọn bố cục' popup that appears after confirming gallery."""
+        """Dismiss the 'Chọn bố cục' popup that appears after confirming gallery.
+
+        From actual UI dump:
+          - imv_close button bounds: [508,827][556,856] → tap(532, 842)
+          - Popup title "Chọn bố cục" at [229,827][347,856]
+        """
         time.sleep(self.step_delay)
 
-        # Try clicking the close button via selector
+        # Try clicking the close button via selector (imv_close)
         if self._click_first(self.selectors.get("layout_popup_close", [])):
-            log.info("Dismissed layout popup via close button")
+            log.info("Dismissed layout popup via close button selector")
             time.sleep(self.tap_delay)
             return
 
-        # Fallback: press BACK key
+        # Fallback: tap the X close button at exact coordinates
         if adb is not None:
-            log.info("Dismissing layout popup via BACK key")
-            adb.keyevent("4")
+            log.info("Dismissing layout popup via fallback tap on X button (532, 842)")
+            adb.tap(532, 842)
             time.sleep(self.tap_delay)
 
     # ------------------------------------------------------------------
