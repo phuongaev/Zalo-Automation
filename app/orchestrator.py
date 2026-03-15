@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import logging
 import random
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -182,6 +184,37 @@ class TriggerRunService:
             # We clear the whole account media root at the start of the next run instead.
             self.storage.cleanup_dir(job_dir)
 
+    def _run_account_thread(
+        self,
+        account: AccountConfig,
+        text: str,
+        image_urls: list[str],
+        post_id: str,
+        batch_number: int,
+        results_lock: threading.Lock,
+        all_results: list[dict],
+    ) -> None:
+        """Run a single account in its own thread. Appends result to all_results (thread-safe)."""
+        result = self._run_account(account, text, image_urls, post_id)
+        row = asdict(result)
+        row["batch"] = batch_number
+        with results_lock:
+            all_results.append(row)
+
+        # Each emulator stops itself after finishing (with random delay)
+        should_stop = self.cfg.stop_emulator_after_run and not self.cfg.dry_run
+        if should_stop:
+            if self.cfg.keep_emulator_open_on_failure and not result.ok:
+                log.info("Keeping emulator open for %s because it failed", account.account_id)
+            else:
+                delay = random.uniform(10, 20)
+                log.info("Waiting %.1f seconds before stopping emulator for %s", delay, account.account_id)
+                time.sleep(delay)
+                try:
+                    self.ldplayer.quit(account)
+                except Exception:
+                    log.exception("Failed to stop emulator for %s", account.account_id)
+
     def run_once(self, account_ids: list[str] | None = None) -> dict:
         payload = self.api.fetch_post()
         if payload is None:
@@ -198,39 +231,40 @@ class TriggerRunService:
         batch_size = max(1, int(self.cfg.batch_size or 1))
         batches = self._chunked(accounts, batch_size)
         all_results: list[dict] = []
+        results_lock = threading.Lock()
 
         for batch_number, batch in enumerate(batches, start=1):
-            launched: list[AccountConfig] = []
-            try:
+            log.info("=== Batch %d: %d accounts ===", batch_number, len(batch))
+            futures = []
+
+            with ThreadPoolExecutor(max_workers=batch_size) as executor:
                 for i, account in enumerate(batch):
-                    if not self.cfg.dry_run:
-                        self.ldplayer.ensure_running(account)
-                    launched.append(account)
-                    # Stagger launches: wait 10 seconds between each emulator start
-                    if not self.cfg.dry_run and i < len(batch) - 1:
+                    # Stagger: wait 10 seconds between each emulator launch
+                    if i > 0 and not self.cfg.dry_run:
                         log.info("Waiting 10s before launching next emulator...")
                         time.sleep(10)
 
-                for account in batch:
-                    result = self._run_account(account, payload.text, payload.images, payload.post_id)
-                    row = asdict(result)
-                    row["batch"] = batch_number
-                    all_results.append(row)
-            finally:
-                should_stop = self.cfg.stop_emulator_after_run and not self.cfg.dry_run
-                if should_stop:
-                    if self.cfg.keep_emulator_open_on_failure and any(not r.get("ok") for r in all_results):
-                        log.info("Keeping emulator open because at least one account failed and keep_emulator_open_on_failure=true")
-                    else:
-                        # Random delay before stopping emulator to simulate human behavior
-                        delay = random.uniform(10, 20)
-                        log.info("Waiting %.1f seconds before stopping emulators", delay)
-                        time.sleep(delay)
-                        for account in launched:
-                            try:
-                                self.ldplayer.quit(account)
-                            except Exception:
-                                log.exception("Failed to stop emulator for %s", account.account_id)
+                    log.info("Launching account %s (emulator_index=%s)", account.account_id, account.emulator_index)
+                    future = executor.submit(
+                        self._run_account_thread,
+                        account,
+                        payload.text,
+                        payload.images,
+                        payload.post_id,
+                        batch_number,
+                        results_lock,
+                        all_results,
+                    )
+                    futures.append(future)
+
+                # Wait for all threads in this batch to complete
+                for future in as_completed(futures):
+                    try:
+                        future.result()
+                    except Exception:
+                        log.exception("Unexpected error in account thread")
+
+            log.info("=== Batch %d completed ===", batch_number)
 
         success_count = sum(1 for r in all_results if r["ok"])
         report = {
