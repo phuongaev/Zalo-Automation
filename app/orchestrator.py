@@ -6,6 +6,8 @@ import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+import requests
+
 from app.adb_client import AdbClient
 from app.api_client import ContentApiClient
 from app.config import AccountConfig, load_app_config
@@ -14,6 +16,8 @@ from app.ldplayer import LDPlayerController
 from app.storage import TempStorage
 from app.ui_debug import UiDebug
 from app.zalo_automation import ZaloAutomation
+
+COMPLETION_WEBHOOK_URL = "https://go.dungmoda.com/webhook/zalo-mkt-dang-bai-len-tuong-done"
 
 log = logging.getLogger(__name__)
 
@@ -198,10 +202,14 @@ class TriggerRunService:
         for batch_number, batch in enumerate(batches, start=1):
             launched: list[AccountConfig] = []
             try:
-                for account in batch:
+                for i, account in enumerate(batch):
                     if not self.cfg.dry_run:
                         self.ldplayer.ensure_running(account)
                     launched.append(account)
+                    # Stagger launches: wait 10 seconds between each emulator start
+                    if not self.cfg.dry_run and i < len(batch) - 1:
+                        log.info("Waiting 10s before launching next emulator...")
+                        time.sleep(10)
 
                 for account in batch:
                     result = self._run_account(account, payload.text, payload.images, payload.post_id)
@@ -225,7 +233,7 @@ class TriggerRunService:
                                 log.exception("Failed to stop emulator for %s", account.account_id)
 
         success_count = sum(1 for r in all_results if r["ok"])
-        return {
+        report = {
             "ok": success_count == len(all_results),
             "status": "completed",
             "post": {"post_id": payload.post_id, "text": payload.text, "image_count": len(payload.images)},
@@ -235,3 +243,24 @@ class TriggerRunService:
             "failure_count": len(all_results) - success_count,
             "results": all_results,
         }
+
+        # Send completion report to webhook
+        self._send_completion_report(report)
+
+        return report
+
+    def _send_completion_report(self, report: dict) -> None:
+        """Send completion report to the done webhook after all accounts finish."""
+        try:
+            resp = requests.post(
+                COMPLETION_WEBHOOK_URL,
+                json=report,
+                timeout=self.cfg.request_timeout_seconds,
+            )
+            log.info(
+                "Completion report sent to %s — status=%s",
+                COMPLETION_WEBHOOK_URL,
+                resp.status_code,
+            )
+        except Exception:
+            log.exception("Failed to send completion report to %s", COMPLETION_WEBHOOK_URL)
