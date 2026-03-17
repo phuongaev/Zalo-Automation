@@ -8,3 +8,4 @@ class PostPayload:
     post_id: str
     text: str
     images: list[str] = field(default_factory=list)
+    row_index: int | None = None

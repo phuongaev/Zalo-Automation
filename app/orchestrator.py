@@ -236,14 +236,29 @@ class TriggerRunService:
                 log.info("Waiting 10s before starting next account...")
                 time.sleep(10)
 
-        success_count = sum(1 for r in all_results if r["ok"])
+        success_accounts = [r for r in all_results if r["ok"]]
+        failure_accounts = [r for r in all_results if not r["ok"]]
         report = {
-            "ok": success_count == len(all_results),
+            "ok": len(failure_accounts) == 0,
             "status": "completed",
-            "post": {"post_id": payload.post_id, "text": payload.text, "image_count": len(payload.images)},
+            "row_index": payload.row_index,
+            "post": {
+                "post_id": payload.post_id,
+                "text": payload.text,
+                "image_count": len(payload.images),
+                "row_index": payload.row_index,
+            },
             "total_accounts": len(all_results),
-            "success_count": success_count,
-            "failure_count": len(all_results) - success_count,
+            "success_count": len(success_accounts),
+            "failure_count": len(failure_accounts),
+            "success_accounts": [
+                {"account_id": r["account_id"], "emulator_index": r["emulator_index"], "status": r["status"], "message": r["message"]}
+                for r in success_accounts
+            ],
+            "failure_accounts": [
+                {"account_id": r["account_id"], "emulator_index": r["emulator_index"], "status": r["status"], "message": r["message"]}
+                for r in failure_accounts
+            ],
             "results": all_results,
         }
 

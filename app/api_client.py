@@ -38,10 +38,13 @@ class ContentApiClient:
         if text is None or str(text).strip() == "":
             text = data.get("content")
         images = list(data.get("images") or [])
+        raw_row_index = data.get("row_index")
+        row_index = int(raw_row_index) if raw_row_index is not None else None
         payload = PostPayload(
             post_id=str(data.get("post_id") or uuid4().hex),
             text=str(text or "").strip(),
             images=images,
+            row_index=row_index,
         )
         log.info("Fetched content API payload: text_len=%s image_count=%s", len(payload.text), len(payload.images))
         return payload
