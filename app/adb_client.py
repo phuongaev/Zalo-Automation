@@ -11,9 +11,9 @@ log = logging.getLogger(__name__)
 
 
 class AdbClient:
-    def __init__(self, serial: str) -> None:
+    def __init__(self, serial: str, adb_path: str | None = None) -> None:
         self.serial = serial
-        self.adb_path = load_app_config().global_.adb_path
+        self.adb_path = adb_path or load_app_config().global_.adb_path
 
     def _run(self, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
         cmd = [self.adb_path, "-s", self.serial, *args]
@@ -78,6 +78,7 @@ class AdbClient:
         ]:
             self._run("shell", "am", "force-stop", pkg, check=False)
         self.keyevent("3")
+        log.info("Ads dismissal complete for %s", self.serial)
 
     def scan_media_root(self, remote_dir: str) -> None:
         self._run(

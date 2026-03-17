@@ -74,5 +74,7 @@ def get_settings() -> Settings:
 @lru_cache(maxsize=1)
 def load_app_config() -> AppFileConfig:
     path = Path(get_settings().config)
+    if not path.is_absolute():
+        path = Path(__file__).resolve().parent.parent / path
     raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     return AppFileConfig.model_validate(raw)

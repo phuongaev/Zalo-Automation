@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import random
 import time
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -51,10 +52,14 @@ def _run_single_attempt(
     account = AccountConfig.model_validate(account_dict)
     cfg = GlobalConfig.model_validate(global_cfg_dict)
 
-    adb = AdbClient(account.adb_serial)
+    adb = AdbClient(account.adb_serial, adb_path=cfg.adb_path)
     auto = ZaloAutomation(account.adb_serial, dry_run=cfg.dry_run)
     ui_debug = UiDebug(account.adb_serial)
-    ldplayer = LDPlayerController()
+    ldplayer = LDPlayerController(
+        ldconsole_path=cfg.ldconsole_path,
+        launch_wait=cfg.launch_wait_seconds,
+        after_connect=cfg.after_launch_connect_seconds,
+    )
     storage = TempStorage()
 
     screenshot_path = Path(cfg.screenshots_root) / account.account_id / f"trigger_{post_id}.png"
@@ -116,7 +121,17 @@ def _run_account_worker(
     logger = logging.getLogger(__name__)
     account = AccountConfig.model_validate(account_dict)
     cfg = GlobalConfig.model_validate(global_cfg_dict)
-    ldplayer = LDPlayerController()
+
+    logger.info(
+        "[WORKER-START] PID=%d account=%s emulator_index=%s serial=%s cwd=%s",
+        os.getpid(), account.account_id, account.emulator_index, account.adb_serial, os.getcwd(),
+    )
+
+    ldplayer = LDPlayerController(
+        ldconsole_path=cfg.ldconsole_path,
+        launch_wait=cfg.launch_wait_seconds,
+        after_connect=cfg.after_launch_connect_seconds,
+    )
 
     result: dict = {}
     total_attempts = 1 + max_retries

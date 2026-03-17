@@ -9,6 +9,6 @@ import yaml
 
 @lru_cache(maxsize=1)
 def load_selectors() -> dict[str, list[dict[str, Any]]]:
-    path = Path("config/selectors.yaml")
+    path = Path(__file__).resolve().parent.parent / "config" / "selectors.yaml"
     raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     return raw.get("selectors", {})

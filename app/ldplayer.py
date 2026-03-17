@@ -10,11 +10,21 @@ log = logging.getLogger(__name__)
 
 
 class LDPlayerController:
-    def __init__(self) -> None:
-        cfg = load_app_config().global_
-        self.ldconsole_path = cfg.ldconsole_path
-        self.launch_wait_seconds = cfg.launch_wait_seconds
-        self.after_launch_connect_seconds = cfg.after_launch_connect_seconds
+    def __init__(
+        self,
+        ldconsole_path: str | None = None,
+        launch_wait: int | None = None,
+        after_connect: int | None = None,
+    ) -> None:
+        if ldconsole_path is not None:
+            self.ldconsole_path = ldconsole_path
+            self.launch_wait_seconds = launch_wait or 35
+            self.after_launch_connect_seconds = after_connect or 10
+        else:
+            cfg = load_app_config().global_
+            self.ldconsole_path = cfg.ldconsole_path
+            self.launch_wait_seconds = cfg.launch_wait_seconds
+            self.after_launch_connect_seconds = cfg.after_launch_connect_seconds
 
     def _run(self, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
         cmd = [self.ldconsole_path, *args]

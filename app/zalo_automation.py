@@ -121,30 +121,26 @@ class ZaloAutomation:
         if not phone or not password:
             return AutomationResult(False, "needs_manual_action", "missing phone/password in config after opening login screen")
 
-        if adb is not None:
+        # --- Phone input: try u2 set_text first, fallback to ADB keyboard ---
+        phone_ok = self._set_text_first(self.selectors.get("login_phone_input", []), phone)
+        if not phone_ok and adb is not None:
+            log.info("login_phone_input selector failed; falling back to ADB tap+keyboard")
             adb.force_adb_keyboard()
-
-        phone_ok = False
-        password_ok = False
-        if adb is not None:
             adb.tap(288, 186)
             time.sleep(self.tap_delay)
-            adb.clear_focused_text_field(backspaces=20)
-            time.sleep(self.type_delay)
             adb.input_text_adb_keyboard_b64(phone)
             phone_ok = True
-            time.sleep(self.step_delay)
+        time.sleep(self.step_delay)
 
+        # --- Password input: try u2 set_text first, fallback to ADB keyboard ---
+        password_ok = self._set_text_first(self.selectors.get("login_password_input", []), password)
+        if not password_ok and adb is not None:
+            log.info("login_password_input selector failed; falling back to ADB tap+keyboard")
+            adb.force_adb_keyboard()
             adb.tap(263, 243)
             time.sleep(self.tap_delay)
-            adb.clear_focused_text_field(backspaces=32)
-            time.sleep(self.type_delay)
             adb.input_text_adb_keyboard_b64(password)
             password_ok = True
-        else:
-            phone_ok = self._set_text_first(self.selectors.get("login_phone_input", []), phone)
-            time.sleep(1.0)
-            password_ok = self._set_text_first(self.selectors.get("login_password_input", []), password)
         time.sleep(self.step_delay)
 
         submit_ok = self._click_first(self.selectors.get("login_submit_button", []))
