@@ -30,10 +30,10 @@ class ZaloAutomation:
         self.selectors = load_selectors()
         self.device = None
         cfg = load_app_config().global_
-        self.tap_delay = cfg.tap_delay_seconds * 1.5
-        self.type_delay = cfg.type_delay_seconds * 1.5
-        self.swipe_delay = cfg.swipe_delay_seconds * 1.5
-        self.step_delay = cfg.step_delay_seconds * 1.5
+        self.tap_delay = cfg.tap_delay_seconds * 2.0
+        self.type_delay = cfg.type_delay_seconds * 2.0
+        self.swipe_delay = cfg.swipe_delay_seconds * 2.0
+        self.step_delay = cfg.step_delay_seconds * 2.0
 
     def ensure_device(self) -> None:
         if self.dry_run:
