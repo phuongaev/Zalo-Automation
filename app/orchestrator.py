@@ -58,8 +58,7 @@ class TriggerRunService:
         try:
             if not self.cfg.dry_run:
                 self.ldplayer.ensure_running(account)
-                adb.connect()
-                adb.wait_for_device()
+                adb.ensure_connected()
                 adb.clear_all_media()
                 adb.delete_remote_dir(f"{self.cfg.emulator_media_dir}/{account.account_id}")
                 local_images = self.storage.download_images(image_urls, job_dir) if image_urls else []

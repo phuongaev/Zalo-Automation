@@ -27,17 +27,58 @@ class AdbClient:
     def connect(self) -> None:
         self._run("connect", self.serial, check=False, timeout=30)
 
+    def disconnect(self) -> None:
+        self._run("disconnect", self.serial, check=False, timeout=10)
+
     def wait_for_device(self, timeout: int = 90) -> None:
         """Wait for device with timeout. Retries connect if first attempt times out."""
         try:
             self._run("wait-for-device", timeout=timeout)
         except subprocess.TimeoutExpired:
-            log.warning("wait-for-device timed out, retrying connect + wait...")
-            self._run("disconnect", self.serial, check=False, timeout=10)
+            log.warning("wait-for-device timed out, retrying disconnect + connect + wait...")
+            self.disconnect()
             import time
+            time.sleep(5)
+            self.connect()
             time.sleep(3)
-            self._run("connect", self.serial, check=False, timeout=30)
             self._run("wait-for-device", timeout=timeout)
+
+    def wait_boot_complete(self, timeout: int = 120) -> bool:
+        """Poll until Android sys.boot_completed=1. Returns True if boot finished."""
+        import time
+        log.info("Waiting for boot_completed on %s (timeout=%ds)", self.serial, timeout)
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            try:
+                r = self._run("shell", "getprop", "sys.boot_completed", check=False, timeout=10)
+                if r.stdout.strip() == "1":
+                    log.info("Boot completed on %s", self.serial)
+                    return True
+            except subprocess.TimeoutExpired:
+                pass
+            time.sleep(3)
+        log.warning("Boot NOT completed on %s after %ds", self.serial, timeout)
+        return False
+
+    def ensure_connected(self, max_attempts: int = 3) -> None:
+        """Robust connect: disconnect → connect → wait-for-device → boot check, with retries."""
+        import time
+        for attempt in range(1, max_attempts + 1):
+            log.info("ensure_connected attempt %d/%d for %s", attempt, max_attempts, self.serial)
+            try:
+                self.disconnect()
+                time.sleep(2)
+                self.connect()
+                time.sleep(3)
+                self.wait_for_device(timeout=60)
+                if self.wait_boot_complete(timeout=90):
+                    return
+                log.warning("Boot not complete, will retry...")
+            except (subprocess.TimeoutExpired, subprocess.CalledProcessError) as exc:
+                log.warning("ensure_connected attempt %d failed: %s", attempt, exc)
+            if attempt < max_attempts:
+                time.sleep(5)
+        raise RuntimeError(f"Cannot connect to {self.serial} after {max_attempts} attempts")
 
     def start_app(self, package: str) -> None:
         self._run("shell", "monkey", "-p", package, "-c", "android.intent.category.LAUNCHER", "1")
