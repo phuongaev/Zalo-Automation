@@ -78,6 +78,48 @@ class ZaloAutomation:
         obj.set_text(value)
         return True
 
+    def _fill_login_field(
+        self,
+        selector_key: str,
+        value: str,
+        fallback_xy: tuple[int, int],
+        adb: Any = None,
+    ) -> bool:
+        """Click a login field, clear it, then paste value.
+
+        Strategy:
+        1. ADB tap exact coordinates to guarantee the correct field is focused.
+        2. Find the focused EditText via u2 and use set_text to clear + paste.
+        3. Fallback: ADB keyboard if u2 fails.
+        """
+        # Step 1: ADB tap to focus the correct field
+        if adb is not None:
+            adb.tap(fallback_xy[0], fallback_xy[1])
+            log.info("Tapped field %s at %s", selector_key, fallback_xy)
+            time.sleep(self.tap_delay)
+
+        # Step 2: Try u2 set_text on the focused element
+        self.ensure_device()
+        try:
+            focused = self.device(focused=True, className="android.widget.EditText")
+            if focused.exists:
+                focused.set_text("")
+                time.sleep(self.type_delay)
+                focused.set_text(value)
+                log.info("Field %s set via u2 focused EditText", selector_key)
+                return True
+        except Exception as exc:
+            log.warning("u2 focused set_text failed for %s: %s", selector_key, exc)
+
+        # Step 3: Fallback — ADB keyboard
+        if adb is not None:
+            log.info("Fallback: ADB keyboard for %s", selector_key)
+            adb.force_adb_keyboard()
+            adb.input_text_adb_keyboard_b64(value)
+            return True
+
+        return False
+
     def check_login_state(self) -> str:
         if self.dry_run:
             return "logged_in"
@@ -121,44 +163,18 @@ class ZaloAutomation:
         if not phone or not password:
             return AutomationResult(False, "needs_manual_action", "missing phone/password in config after opening login screen")
 
-        # --- Phone input: click → clear → paste ---
-        phone_ok = False
-        phone_obj = self._get_first(self.selectors.get("login_phone_input", []))
-        if phone_obj is not None:
-            phone_obj.click()
-            time.sleep(self.tap_delay)
-            phone_obj.set_text("")
-            time.sleep(self.type_delay)
-            phone_obj.set_text(phone)
-            log.info("Phone set via u2 set_text")
-            phone_ok = True
-        elif adb is not None:
-            log.info("login_phone_input selector not found; fallback ADB tap+keyboard")
-            adb.tap(288, 186)
-            time.sleep(self.tap_delay)
-            adb.force_adb_keyboard()
-            adb.input_text_adb_keyboard_b64(phone)
-            phone_ok = True
+        # --- Phone input: tap field → clear → paste phone ---
+        phone_ok = self._fill_login_field(
+            "login_phone_input", phone, fallback_xy=(288, 186), adb=adb,
+        )
+        log.info("Phone input: ok=%s", phone_ok)
         time.sleep(self.step_delay)
 
-        # --- Password input: click → clear → paste ---
-        password_ok = False
-        password_obj = self._get_first(self.selectors.get("login_password_input", []))
-        if password_obj is not None:
-            password_obj.click()
-            time.sleep(self.tap_delay)
-            password_obj.set_text("")
-            time.sleep(self.type_delay)
-            password_obj.set_text(password)
-            log.info("Password set via u2 set_text")
-            password_ok = True
-        elif adb is not None:
-            log.info("login_password_input selector not found; fallback ADB tap+keyboard")
-            adb.tap(263, 243)
-            time.sleep(self.tap_delay)
-            adb.force_adb_keyboard()
-            adb.input_text_adb_keyboard_b64(password)
-            password_ok = True
+        # --- Password input: tap field → clear → paste password ---
+        password_ok = self._fill_login_field(
+            "login_password_input", password, fallback_xy=(263, 243), adb=adb,
+        )
+        log.info("Password input: ok=%s", password_ok)
         time.sleep(self.step_delay)
 
         submit_ok = self._click_first(self.selectors.get("login_submit_button", []))
