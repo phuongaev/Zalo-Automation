@@ -15,16 +15,29 @@ class AdbClient:
         self.serial = serial
         self.adb_path = adb_path or load_app_config().global_.adb_path
 
-    def _run(self, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+    def _run(self, *args: str, check: bool = True, timeout: int = 60) -> subprocess.CompletedProcess[str]:
         cmd = [self.adb_path, "-s", self.serial, *args]
         log.info("ADB: %s", " ".join(cmd))
-        return subprocess.run(cmd, text=True, capture_output=True, check=check)
+        try:
+            return subprocess.run(cmd, text=True, capture_output=True, check=check, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            log.warning("ADB command timed out after %ds: %s", timeout, " ".join(cmd))
+            raise
 
     def connect(self) -> None:
-        self._run("connect", self.serial, check=False)
+        self._run("connect", self.serial, check=False, timeout=30)
 
-    def wait_for_device(self) -> None:
-        self._run("wait-for-device")
+    def wait_for_device(self, timeout: int = 90) -> None:
+        """Wait for device with timeout. Retries connect if first attempt times out."""
+        try:
+            self._run("wait-for-device", timeout=timeout)
+        except subprocess.TimeoutExpired:
+            log.warning("wait-for-device timed out, retrying connect + wait...")
+            self._run("disconnect", self.serial, check=False, timeout=10)
+            import time
+            time.sleep(3)
+            self._run("connect", self.serial, check=False, timeout=30)
+            self._run("wait-for-device", timeout=timeout)
 
     def start_app(self, package: str) -> None:
         self._run("shell", "monkey", "-p", package, "-c", "android.intent.category.LAUNCHER", "1")
