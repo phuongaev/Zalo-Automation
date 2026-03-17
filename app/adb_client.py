@@ -62,13 +62,15 @@ class AdbClient:
         self._run("shell", "mkdir", "-p", "/storage/emulated/0/DCIM/Camera", check=False)
 
     def dismiss_ads_and_prepare_home(self) -> None:
-        log.info("Dismissing emulator ads/overlays before opening Zalo")
-        # Back out of overlays, go home, clear recents, stop common ad/browser packages.
+        import time
+        log.info("Dismissing emulator ads/overlays before opening Zalo on %s", self.serial)
+        # Round 1: Back out of any overlay dialogs
         for _ in range(4):
             self.keyevent("4")
-        self.keyevent("3")
-        self.keyevent("187")
-        self.keyevent("4")
+            time.sleep(0.3)
+        self.keyevent("3")  # Home
+        time.sleep(1.0)
+        # Force-stop common ad/browser packages
         for pkg in [
             "com.android.browser",
             "com.android.chrome",
@@ -77,7 +79,17 @@ class AdbClient:
             "com.google.android.youtube",
         ]:
             self._run("shell", "am", "force-stop", pkg, check=False)
-        self.keyevent("3")
+        time.sleep(0.5)
+        # Round 2: Clear recents and go home again to dismiss any lingering overlays
+        self.keyevent("187")  # Recent apps
+        time.sleep(0.5)
+        self.keyevent("4")   # Back
+        time.sleep(0.3)
+        for _ in range(3):
+            self.keyevent("4")
+            time.sleep(0.3)
+        self.keyevent("3")  # Home
+        time.sleep(1.0)
         log.info("Ads dismissal complete for %s", self.serial)
 
     def scan_media_root(self, remote_dir: str) -> None:

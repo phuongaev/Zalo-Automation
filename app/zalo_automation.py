@@ -30,10 +30,10 @@ class ZaloAutomation:
         self.selectors = load_selectors()
         self.device = None
         cfg = load_app_config().global_
-        self.tap_delay = cfg.tap_delay_seconds
-        self.type_delay = cfg.type_delay_seconds
-        self.swipe_delay = cfg.swipe_delay_seconds
-        self.step_delay = cfg.step_delay_seconds
+        self.tap_delay = cfg.tap_delay_seconds * 1.5
+        self.type_delay = cfg.type_delay_seconds * 1.5
+        self.swipe_delay = cfg.swipe_delay_seconds * 1.5
+        self.step_delay = cfg.step_delay_seconds * 1.5
 
     def ensure_device(self) -> None:
         if self.dry_run:
@@ -121,10 +121,17 @@ class ZaloAutomation:
         if not phone or not password:
             return AutomationResult(False, "needs_manual_action", "missing phone/password in config after opening login screen")
 
-        # --- Phone input: try u2 set_text first, fallback to ADB keyboard ---
-        phone_ok = self._set_text_first(self.selectors.get("login_phone_input", []), phone)
-        if not phone_ok and adb is not None:
-            log.info("login_phone_input selector failed; falling back to ADB tap+keyboard")
+        # --- Phone input ---
+        phone_ok = False
+        phone_obj = self._get_first(self.selectors.get("login_phone_input", []))
+        if phone_obj is not None:
+            phone_obj.click()
+            time.sleep(self.tap_delay)
+            phone_obj.set_text(phone)
+            log.info("Phone set via u2 set_text")
+            phone_ok = True
+        elif adb is not None:
+            log.info("login_phone_input selector not found; fallback ADB tap+keyboard")
             adb.force_adb_keyboard()
             adb.tap(288, 186)
             time.sleep(self.tap_delay)
@@ -132,10 +139,17 @@ class ZaloAutomation:
             phone_ok = True
         time.sleep(self.step_delay)
 
-        # --- Password input: try u2 set_text first, fallback to ADB keyboard ---
-        password_ok = self._set_text_first(self.selectors.get("login_password_input", []), password)
-        if not password_ok and adb is not None:
-            log.info("login_password_input selector failed; falling back to ADB tap+keyboard")
+        # --- Password input ---
+        password_ok = False
+        password_obj = self._get_first(self.selectors.get("login_password_input", []))
+        if password_obj is not None:
+            password_obj.click()
+            time.sleep(self.tap_delay)
+            password_obj.set_text(password)
+            log.info("Password set via u2 set_text")
+            password_ok = True
+        elif adb is not None:
+            log.info("login_password_input selector not found; fallback ADB tap+keyboard")
             adb.force_adb_keyboard()
             adb.tap(263, 243)
             time.sleep(self.tap_delay)
