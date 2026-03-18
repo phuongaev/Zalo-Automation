@@ -520,9 +520,9 @@ class ZaloServerApp:
         check_vars: list[tuple[str, tk.BooleanVar]] = []
         for acc in enabled:
             aid = acc.get("account_id", "?")
-            idx = acc.get("emulator_index", "?")
+            emu_name = acc.get("emulator_name", "?")
             var = tk.BooleanVar(value=True)
-            cb = self._checkbox(popup, text=f"{aid}  (index={idx})", variable=var)
+            cb = self._checkbox(popup, text=f"{aid}  ({emu_name})", variable=var)
             cb.pack(padx=24, pady=2, anchor="w")
             check_vars.append((aid, var))
 
