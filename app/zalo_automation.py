@@ -159,15 +159,14 @@ class ZaloAutomation:
         return "unknown"
 
     def login_if_needed(self, phone: str, password: str, adb=None) -> AutomationResult:
+        """Handle login. Called by orchestrator ONLY when login_state != logged_in."""
         if self.dry_run:
             return AutomationResult(True, "success", "dry-run login skipped")
         self.ensure_device()
-        state = self.check_login_state()
-        if state == "logged_in":
-            return AutomationResult(True, "success", "already logged in")
-        if state == "unknown":
-            log.warning("Login state is unknown — likely still on home/chat screen. Treating as logged_in.")
-            return AutomationResult(True, "success", "state unknown, assuming logged in")
+
+        # NOTE: Do NOT re-check login state here — orchestrator already confirmed
+        # we need to login. Re-checking causes race conditions (UI transitioning
+        # → returns "unknown" → skips login → fails).
 
         has_welcome_login = self._exists_any(self.selectors.get("welcome_login_button", []))
         has_welcome_register = self._exists_any(self.selectors.get("welcome_register_button", []))
@@ -175,11 +174,11 @@ class ZaloAutomation:
             welcome_clicked = self._click_first(self.selectors.get("welcome_login_button", []))
             if welcome_clicked:
                 log.info("Clicked welcome login button on startup screen")
-                time.sleep(self.step_delay)
+                time.sleep(self.step_delay * 2)
             elif adb is not None:
                 log.info("Welcome login selector found but click did not fire; using fallback tap")
                 adb.tap(288, 897)
-                time.sleep(self.step_delay)
+                time.sleep(self.step_delay * 2)
             else:
                 log.info("Welcome login selector found but no adb fallback available")
         else:
@@ -188,18 +187,22 @@ class ZaloAutomation:
         if not phone or not password:
             return AutomationResult(False, "needs_manual_action", "missing phone/password in config after opening login screen")
 
-        # SAFETY CHECK: Verify login form is actually showing before typing credentials
-        # This prevents accidentally pasting password into a chat window
+        # Wait for login form to load, then verify it's actually present
         time.sleep(self.step_delay)
-        has_phone_field = self._exists_any([{"resourceId": "com.zing.zalo:id/etPhoneNumber"}])
-        has_password_field = self._exists_any([{"resourceId": "com.zing.zalo:id/etPass"}])
-        if not has_phone_field and not has_password_field:
-            log.error("SAFETY: Login form fields NOT found on screen! Aborting login to prevent typing into wrong screen.")
-            # Re-check — maybe we're actually logged in
-            recheck = self.check_login_state()
-            if recheck == "logged_in":
-                return AutomationResult(True, "success", "actually logged in after recheck")
-            return AutomationResult(False, "failed", "login form not visible, refusing to type credentials")
+        login_form_visible = self._exists_any(self.selectors.get("login_markers", []))
+        if not login_form_visible:
+            # Maybe we're on welcome screen and need to wait more after clicking login button
+            log.info("Login form not yet visible, waiting extra...")
+            time.sleep(self.step_delay * 2)
+            login_form_visible = self._exists_any(self.selectors.get("login_markers", []))
+
+        if not login_form_visible:
+            # Final check — maybe we're actually logged in now
+            if self._exists_any(self.selectors.get("home_bottom_tabs", [])) or \
+               self._exists_any(self.selectors.get("home_feed_markers", [])):
+                return AutomationResult(True, "success", "actually logged in after waiting")
+            log.error("Login form not visible after waiting. Current screen is unknown.")
+            return AutomationResult(False, "failed", "login form not visible after waiting")
 
         # --- Phone input: tap field → clear → paste phone ---
         phone_ok = self._fill_login_field(

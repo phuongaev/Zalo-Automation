@@ -77,7 +77,10 @@ class TriggerRunService:
 
             # Check login state with retry (poll every 3s for up to 15s)
             login_state = auto.check_login_state(wait_seconds=15)
-            if login_state != "logged_in":
+            log.info("[%s] Login state: %s", account.account_id, login_state)
+            if login_state == "unknown":
+                log.info("[%s] State unknown — assuming logged in, skipping login", account.account_id)
+            elif login_state == "logged_out":
                 login_result = auto.login_if_needed(account.login.phone, account.login.password, adb=adb)
                 if not login_result.ok:
                     if not self.cfg.dry_run:
