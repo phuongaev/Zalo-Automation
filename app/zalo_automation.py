@@ -88,34 +88,50 @@ class ZaloAutomation:
         """Click a login field, clear it, then paste value.
 
         Strategy:
-        1. ADB tap exact coordinates to guarantee the correct field is focused.
-        2. Find the focused EditText via u2 and use set_text to clear + paste.
-        3. Fallback: ADB keyboard if u2 fails.
+        1. Try u2 selector (resourceId) → click → set_text('') → set_text(value)
+        2. Fallback: ADB tap coordinates → u2 focused EditText → set_text
+        3. Last resort: ADB keyboard
         """
-        # Step 1: ADB tap to focus the correct field
+        self.ensure_device()
+
+        # Strategy 1: Find field by selector (resourceId), click it, set_text
+        field_obj = self._get_first(self.selectors.get(selector_key, []))
+        if field_obj is not None:
+            try:
+                field_obj.click()
+                time.sleep(self.tap_delay)
+                field_obj.set_text("")
+                time.sleep(self.type_delay)
+                field_obj.set_text(value)
+                log.info("Field %s set via u2 selector", selector_key)
+                time.sleep(self.type_delay)
+                return True
+            except Exception as exc:
+                log.warning("u2 selector set_text failed for %s: %s", selector_key, exc)
+
+        # Strategy 2: ADB tap coordinates → find focused EditText → set_text
         if adb is not None:
             adb.tap(fallback_xy[0], fallback_xy[1])
             log.info("Tapped field %s at %s", selector_key, fallback_xy)
             time.sleep(self.tap_delay)
 
-        # Step 2: Try u2 set_text on the focused element
-        self.ensure_device()
-        try:
-            focused = self.device(focused=True, className="android.widget.EditText")
-            if focused.exists:
-                focused.set_text("")
-                time.sleep(self.type_delay)
-                focused.set_text(value)
-                log.info("Field %s set via u2 focused EditText", selector_key)
-                return True
-        except Exception as exc:
-            log.warning("u2 focused set_text failed for %s: %s", selector_key, exc)
+            try:
+                focused = self.device(focused=True, className="android.widget.EditText")
+                if focused.exists:
+                    focused.set_text("")
+                    time.sleep(self.type_delay)
+                    focused.set_text(value)
+                    log.info("Field %s set via ADB tap + u2 focused", selector_key)
+                    time.sleep(self.type_delay)
+                    return True
+            except Exception as exc:
+                log.warning("u2 focused set_text failed for %s: %s", selector_key, exc)
 
-        # Step 3: Fallback — ADB keyboard
-        if adb is not None:
-            log.info("Fallback: ADB keyboard for %s", selector_key)
+            # Strategy 3: ADB keyboard
+            log.info("Last resort: ADB keyboard for %s", selector_key)
             adb.force_adb_keyboard()
             adb.input_text_adb_keyboard_b64(value)
+            time.sleep(self.type_delay)
             return True
 
         return False
