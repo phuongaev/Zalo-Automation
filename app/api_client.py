@@ -34,6 +34,11 @@ class ContentApiClient:
             return None
         resp.raise_for_status()
         data = resp.json()
+        # API may return a list (array) — use first element
+        if isinstance(data, list):
+            if not data:
+                return None
+            data = data[0]
         text = data.get("text")
         if text is None or str(text).strip() == "":
             text = data.get("content")
