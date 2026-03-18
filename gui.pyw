@@ -9,6 +9,8 @@ import sys
 import tkinter as tk
 from tkinter import messagebox
 from pathlib import Path
+from urllib.request import urlopen
+from urllib.error import URLError
 
 APP_DIR = Path(__file__).resolve().parent
 RUN_SCRIPT = str(APP_DIR / "run.py")
@@ -20,8 +22,8 @@ LOG_FILE = APP_DIR / "logs" / "server_stderr.log"
 _venv_python = APP_DIR / ".venv" / "Scripts" / "python.exe"
 PYTHON = str(_venv_python) if _venv_python.exists() else sys.executable
 
+SERVER_PORT = 8787
 server_process: subprocess.Popen | None = None
-PIP = str(Path(PYTHON).parent / "pip.exe")
 
 
 def _install_deps() -> tuple[bool, str]:
@@ -49,19 +51,31 @@ def _read_pid() -> int | None:
     return None
 
 
+def _server_responding() -> bool:
+    """Check if server is already responding on the port."""
+    try:
+        urlopen(f"http://127.0.0.1:{SERVER_PORT}/status", timeout=2)
+        return True
+    except Exception:
+        return False
+
+
 def _is_running(pid: int | None = None) -> bool:
     if pid is None:
         pid = _read_pid()
     if pid is None:
-        return False
+        return _server_responding()
     try:
         os.kill(pid, 0)
         return True
     except OSError:
-        return False
+        return _server_responding()
 
 
 def start_server():
+    if _server_responding():
+        update_status("Running", "green")
+        return
     existing_pid = _read_pid()
     if _is_running(existing_pid):
         update_status("Running", "green")
@@ -91,7 +105,7 @@ def _do_start():
 
 
 def _verify_started(pid: int):
-    if _is_running(pid):
+    if _is_running(pid) or _server_responding():
         update_status("Running", "green")
         return
 
@@ -161,16 +175,18 @@ def update_status(text: str, color: str):
 
 
 def check_status():
-    pid = server_process.pid if server_process else _read_pid()
-    if _is_running(pid):
+    if _server_responding():
         update_status("Running", "green")
     else:
-        if PID_FILE.exists():
-            PID_FILE.unlink(missing_ok=True)
-        # Only update to stopped if not in a transitional state
-        current = status_label.cget("text")
-        if "Starting" not in current and "Stopping" not in current:
-            update_status("Stopped", "red")
+        pid = server_process.pid if server_process else _read_pid()
+        if _is_running(pid):
+            update_status("Running", "green")
+        else:
+            if PID_FILE.exists():
+                PID_FILE.unlink(missing_ok=True)
+            current = status_label.cget("text")
+            if "Starting" not in current and "Stopping" not in current and "Installing" not in current:
+                update_status("Stopped", "red")
     root.after(5000, check_status)
 
 
