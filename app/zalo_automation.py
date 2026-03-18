@@ -88,101 +88,61 @@ class ZaloAutomation:
         """Click a login field, clear it, then paste value.
 
         Strategy:
-        1. Try u2 selector (resourceId) → click → set_text('') → set_text(value)
-        2. Fallback: ADB tap coordinates → u2 focused EditText → set_text
-        3. Last resort: ADB keyboard
+        1. ADB tap exact coordinates to guarantee the correct field is focused.
+        2. Find the focused EditText via u2 and use set_text to clear + paste.
+        3. Fallback: ADB keyboard if u2 fails.
         """
-        self.ensure_device()
-
-        # Strategy 1: Find field by selector (resourceId), click it, set_text
-        field_obj = self._get_first(self.selectors.get(selector_key, []))
-        if field_obj is not None:
-            try:
-                field_obj.click()
-                time.sleep(self.tap_delay)
-                field_obj.set_text("")
-                time.sleep(self.type_delay)
-                field_obj.set_text(value)
-                log.info("Field %s set via u2 selector", selector_key)
-                time.sleep(self.type_delay)
-                return True
-            except Exception as exc:
-                log.warning("u2 selector set_text failed for %s: %s", selector_key, exc)
-
-        # Strategy 2: ADB tap coordinates → find focused EditText → set_text
+        # Step 1: ADB tap to focus the correct field
         if adb is not None:
             adb.tap(fallback_xy[0], fallback_xy[1])
             log.info("Tapped field %s at %s", selector_key, fallback_xy)
             time.sleep(self.tap_delay)
 
-            try:
-                focused = self.device(focused=True, className="android.widget.EditText")
-                if focused.exists:
-                    focused.set_text("")
-                    time.sleep(self.type_delay)
-                    focused.set_text(value)
-                    log.info("Field %s set via ADB tap + u2 focused", selector_key)
-                    time.sleep(self.type_delay)
-                    return True
-            except Exception as exc:
-                log.warning("u2 focused set_text failed for %s: %s", selector_key, exc)
+        # Step 2: Try u2 set_text on the focused element
+        self.ensure_device()
+        try:
+            focused = self.device(focused=True, className="android.widget.EditText")
+            if focused.exists:
+                focused.set_text("")
+                time.sleep(self.type_delay)
+                focused.set_text(value)
+                log.info("Field %s set via u2 focused EditText", selector_key)
+                return True
+        except Exception as exc:
+            log.warning("u2 focused set_text failed for %s: %s", selector_key, exc)
 
-            # Strategy 3: ADB keyboard
-            log.info("Last resort: ADB keyboard for %s", selector_key)
+        # Step 3: Fallback — ADB keyboard
+        if adb is not None:
+            log.info("Fallback: ADB keyboard for %s", selector_key)
             adb.force_adb_keyboard()
             adb.input_text_adb_keyboard_b64(value)
-            time.sleep(self.type_delay)
             return True
 
         return False
 
-    def check_login_state(self, wait_seconds: int = 0) -> str:
-        """Detect login state with optional wait for UI to settle.
-
-        Priority order:
-        1. Bottom tab bar (maintab_root_layout etc.) → definitely logged_in
-        2. Login form fields (etPhoneNumber, etPass) → definitely logged_out
-        3. Welcome screen (btnLogin + btnRegisterUsingPhoneNumber) → logged_out
-        4. None of the above → unknown (UI still loading or unexpected screen)
-        """
+    def check_login_state(self) -> str:
         if self.dry_run:
             return "logged_in"
         self.ensure_device()
+        if self._exists_any(self.selectors.get("home_feed_markers", [])):
+            return "logged_in"
 
-        # Optionally wait and retry to let UI settle after app launch
-        attempts = max(1, wait_seconds // 3) if wait_seconds > 0 else 1
-        for attempt in range(attempts):
-            if attempt > 0:
-                time.sleep(3)
-                log.info("check_login_state retry %d/%d...", attempt + 1, attempts)
+        has_welcome_login = self._exists_any(self.selectors.get("welcome_login_button", []))
+        has_welcome_register = self._exists_any(self.selectors.get("welcome_register_button", []))
+        if has_welcome_login and has_welcome_register:
+            return "logged_out"
 
-            # Check 1: Bottom tab bar = logged in (most reliable)
-            if self._exists_any(self.selectors.get("home_bottom_tabs", [])):
-                return "logged_in"
-            if self._exists_any(self.selectors.get("home_feed_markers", [])):
-                return "logged_in"
-
-            # Check 2: Login form input fields = login screen
-            if self._exists_any(self.selectors.get("login_markers", [])):
-                return "logged_out"
-
-            # Check 3: Welcome screen (first launch)
-            has_welcome_login = self._exists_any(self.selectors.get("welcome_login_button", []))
-            has_welcome_register = self._exists_any(self.selectors.get("welcome_register_button", []))
-            if has_welcome_login and has_welcome_register:
-                return "logged_out"
-
+        if self._exists_any(self.selectors.get("login_markers", [])):
+            return "logged_out"
         return "unknown"
 
     def login_if_needed(self, phone: str, password: str, adb=None) -> AutomationResult:
-        """Handle login. Called by orchestrator ONLY when login_state != logged_in."""
         if self.dry_run:
             return AutomationResult(True, "success", "dry-run login skipped")
         self.ensure_device()
-
-        # NOTE: Do NOT re-check login state here — orchestrator already confirmed
-        # we need to login. Re-checking causes race conditions (UI transitioning
-        # → returns "unknown" → skips login → fails).
+        state = self.check_login_state()
+        if state == "logged_in":
+            return AutomationResult(True, "success", "already logged in")
 
         has_welcome_login = self._exists_any(self.selectors.get("welcome_login_button", []))
         has_welcome_register = self._exists_any(self.selectors.get("welcome_register_button", []))
@@ -190,11 +150,11 @@ class ZaloAutomation:
             welcome_clicked = self._click_first(self.selectors.get("welcome_login_button", []))
             if welcome_clicked:
                 log.info("Clicked welcome login button on startup screen")
-                time.sleep(self.step_delay * 2)
+                time.sleep(self.step_delay)
             elif adb is not None:
                 log.info("Welcome login selector found but click did not fire; using fallback tap")
                 adb.tap(288, 897)
-                time.sleep(self.step_delay * 2)
+                time.sleep(self.step_delay)
             else:
                 log.info("Welcome login selector found but no adb fallback available")
         else:
@@ -202,23 +162,6 @@ class ZaloAutomation:
 
         if not phone or not password:
             return AutomationResult(False, "needs_manual_action", "missing phone/password in config after opening login screen")
-
-        # Wait for login form to load, then verify it's actually present
-        time.sleep(self.step_delay)
-        login_form_visible = self._exists_any(self.selectors.get("login_markers", []))
-        if not login_form_visible:
-            # Maybe we're on welcome screen and need to wait more after clicking login button
-            log.info("Login form not yet visible, waiting extra...")
-            time.sleep(self.step_delay * 2)
-            login_form_visible = self._exists_any(self.selectors.get("login_markers", []))
-
-        if not login_form_visible:
-            # Final check — maybe we're actually logged in now
-            if self._exists_any(self.selectors.get("home_bottom_tabs", [])) or \
-               self._exists_any(self.selectors.get("home_feed_markers", [])):
-                return AutomationResult(True, "success", "actually logged in after waiting")
-            log.error("Login form not visible after waiting. Current screen is unknown.")
-            return AutomationResult(False, "failed", "login form not visible after waiting")
 
         # --- Phone input: tap field → clear → paste phone ---
         phone_ok = self._fill_login_field(
@@ -431,10 +374,9 @@ class ZaloAutomation:
         if self.device is None:
             return AutomationResult(False, "failed", "uiautomator2 unavailable")
 
-        # Step 1: Click Timeline tab — wait extra for Timeline to load
-        log.info("Clicking Timeline tab...")
+        # Step 1: Click Timeline tab
         self._click_first(self.selectors.get("timeline_tab", []))
-        time.sleep(self.step_delay * 2)  # extra wait for Timeline to fully load
+        time.sleep(self.step_delay)
 
         if image_count > 0:
             # Step 2: Click "Ảnh" button on Timeline → opens gallery picker
