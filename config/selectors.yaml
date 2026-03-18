@@ -1,20 +1,22 @@
 selectors:
+  # -- Markers to detect LOGGED IN state (bottom tab bar) --
   home_feed_markers:
     - resourceId: "com.zing.zalo:id/maintab_root_layout"
     - resourceId: "com.zing.zalo:id/maintab_message"
     - resourceId: "com.zing.zalo:id/maintab_timeline"
-    - text: "Tin nhắn"
+  # -- Bottom tab bar — the definitive proof we are on home screen --
+  home_bottom_tabs:
+    - resourceId: "com.zing.zalo:id/bottom_navigation"
+    - resourceId: "com.zing.zalo:id/maintab_root_layout"
+  # -- Login form markers (only match ACTUAL login screen) --
   login_markers:
-    - text: "Đăng nhập"
-    - text: "Số điện thoại"
-    - text: "Số điện thoại hoặc tên đăng nhập"
-    - text: "Mật khẩu"
+    - resourceId: "com.zing.zalo:id/etPhoneNumber"
+    - resourceId: "com.zing.zalo:id/etPass"
+  # -- Welcome screen (first launch — has both Login + Register buttons) --
   welcome_login_button:
     - resourceId: "com.zing.zalo:id/btnLogin"
-    - text: "Đăng nhập"
   welcome_register_button:
     - resourceId: "com.zing.zalo:id/btnRegisterUsingPhoneNumber"
-    - text: "Tạo tài khoản mới"
   login_phone_input:
     - resourceId: "com.zing.zalo:id/etPhoneNumber"
     - text: "Số điện thoại"

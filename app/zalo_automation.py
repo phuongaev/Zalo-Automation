@@ -120,20 +120,42 @@ class ZaloAutomation:
 
         return False
 
-    def check_login_state(self) -> str:
+    def check_login_state(self, wait_seconds: int = 0) -> str:
+        """Detect login state with optional wait for UI to settle.
+
+        Priority order:
+        1. Bottom tab bar (maintab_root_layout etc.) → definitely logged_in
+        2. Login form fields (etPhoneNumber, etPass) → definitely logged_out
+        3. Welcome screen (btnLogin + btnRegisterUsingPhoneNumber) → logged_out
+        4. None of the above → unknown (UI still loading or unexpected screen)
+        """
         if self.dry_run:
             return "logged_in"
         self.ensure_device()
-        if self._exists_any(self.selectors.get("home_feed_markers", [])):
-            return "logged_in"
 
-        has_welcome_login = self._exists_any(self.selectors.get("welcome_login_button", []))
-        has_welcome_register = self._exists_any(self.selectors.get("welcome_register_button", []))
-        if has_welcome_login and has_welcome_register:
-            return "logged_out"
+        # Optionally wait and retry to let UI settle after app launch
+        attempts = max(1, wait_seconds // 3) if wait_seconds > 0 else 1
+        for attempt in range(attempts):
+            if attempt > 0:
+                time.sleep(3)
+                log.info("check_login_state retry %d/%d...", attempt + 1, attempts)
 
-        if self._exists_any(self.selectors.get("login_markers", [])):
-            return "logged_out"
+            # Check 1: Bottom tab bar = logged in (most reliable)
+            if self._exists_any(self.selectors.get("home_bottom_tabs", [])):
+                return "logged_in"
+            if self._exists_any(self.selectors.get("home_feed_markers", [])):
+                return "logged_in"
+
+            # Check 2: Login form input fields = login screen
+            if self._exists_any(self.selectors.get("login_markers", [])):
+                return "logged_out"
+
+            # Check 3: Welcome screen (first launch)
+            has_welcome_login = self._exists_any(self.selectors.get("welcome_login_button", []))
+            has_welcome_register = self._exists_any(self.selectors.get("welcome_register_button", []))
+            if has_welcome_login and has_welcome_register:
+                return "logged_out"
+
         return "unknown"
 
     def login_if_needed(self, phone: str, password: str, adb=None) -> AutomationResult:
@@ -143,6 +165,9 @@ class ZaloAutomation:
         state = self.check_login_state()
         if state == "logged_in":
             return AutomationResult(True, "success", "already logged in")
+        if state == "unknown":
+            log.warning("Login state is unknown — likely still on home/chat screen. Treating as logged_in.")
+            return AutomationResult(True, "success", "state unknown, assuming logged in")
 
         has_welcome_login = self._exists_any(self.selectors.get("welcome_login_button", []))
         has_welcome_register = self._exists_any(self.selectors.get("welcome_register_button", []))
@@ -162,6 +187,19 @@ class ZaloAutomation:
 
         if not phone or not password:
             return AutomationResult(False, "needs_manual_action", "missing phone/password in config after opening login screen")
+
+        # SAFETY CHECK: Verify login form is actually showing before typing credentials
+        # This prevents accidentally pasting password into a chat window
+        time.sleep(self.step_delay)
+        has_phone_field = self._exists_any([{"resourceId": "com.zing.zalo:id/etPhoneNumber"}])
+        has_password_field = self._exists_any([{"resourceId": "com.zing.zalo:id/etPass"}])
+        if not has_phone_field and not has_password_field:
+            log.error("SAFETY: Login form fields NOT found on screen! Aborting login to prevent typing into wrong screen.")
+            # Re-check — maybe we're actually logged in
+            recheck = self.check_login_state()
+            if recheck == "logged_in":
+                return AutomationResult(True, "success", "actually logged in after recheck")
+            return AutomationResult(False, "failed", "login form not visible, refusing to type credentials")
 
         # --- Phone input: tap field → clear → paste phone ---
         phone_ok = self._fill_login_field(
@@ -374,9 +412,10 @@ class ZaloAutomation:
         if self.device is None:
             return AutomationResult(False, "failed", "uiautomator2 unavailable")
 
-        # Step 1: Click Timeline tab
+        # Step 1: Click Timeline tab — wait extra for Timeline to load
+        log.info("Clicking Timeline tab...")
         self._click_first(self.selectors.get("timeline_tab", []))
-        time.sleep(self.step_delay)
+        time.sleep(self.step_delay * 2)  # extra wait for Timeline to fully load
 
         if image_count > 0:
             # Step 2: Click "Ảnh" button on Timeline → opens gallery picker
