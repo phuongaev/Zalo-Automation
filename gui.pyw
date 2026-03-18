@@ -348,9 +348,13 @@ class ZaloServerApp:
                 job_text = f"Job running... {int(elapsed)}s elapsed"
             elif job_status == "completed":
                 result = data.get("result") or {}
-                ok = result.get("success_count", 0)
-                fail = result.get("failure_count", 0)
-                job_text = f"Last job: {ok} success, {fail} failed"
+                result_status = result.get("status", "")
+                if result_status == "no_content":
+                    job_text = "\u26A0 Last job: API had no content"
+                else:
+                    ok = result.get("success_count", 0)
+                    fail = result.get("failure_count", 0)
+                    job_text = f"Last job: {ok} success, {fail} failed"
             elif job_status == "error":
                 job_text = f"Last job error: {data.get('error', 'unknown')[:60]}"
             self.root.after(0, self._update_status, "running", job_text)
@@ -501,7 +505,7 @@ class ZaloServerApp:
             popup.configure(bg=CLR_BG)
 
         popup.title("Select Accounts to Trigger")
-        popup.geometry("340x%d" % min(400, 120 + len(enabled) * 36))
+        popup.geometry("340x%d" % min(480, 180 + len(enabled) * 36))
         popup.resizable(False, False)
         popup.transient(self.root)
         popup.grab_set()
@@ -512,12 +516,16 @@ class ZaloServerApp:
             except Exception:
                 pass
 
-        # Header
-        self._label(popup, text="Select accounts:", font=("Segoe UI", 12, "bold"),
-                    text_color=CLR_TEXT).pack(padx=16, pady=(12, 8), anchor="w")
+        # Header + Select All / Deselect All
+        header_row = self._frame(popup)
+        header_row.pack(fill="x", padx=16, pady=(12, 8))
+
+        self._label(header_row, text="Select accounts:", font=("Segoe UI", 12, "bold"),
+                    text_color=CLR_TEXT).pack(side="left")
 
         # Checkboxes
         check_vars: list[tuple[str, tk.BooleanVar]] = []
+        checkboxes: list = []
         for acc in enabled:
             aid = acc.get("account_id", "?")
             emu_name = acc.get("emulator_name", "?")
@@ -525,8 +533,36 @@ class ZaloServerApp:
             cb = self._checkbox(popup, text=f"{aid}  ({emu_name})", variable=var)
             cb.pack(padx=24, pady=2, anchor="w")
             check_vars.append((aid, var))
+            checkboxes.append(cb)
 
-        # Buttons
+        # Select All / Deselect All
+        toggle_frame = self._frame(popup)
+        toggle_frame.pack(fill="x", padx=16, pady=(6, 0))
+
+        def select_all():
+            for _, var in check_vars:
+                var.set(True)
+            # CTK checkboxes need explicit select/deselect
+            if HAS_CTK:
+                for cb in checkboxes:
+                    cb.select()
+
+        def deselect_all():
+            for _, var in check_vars:
+                var.set(False)
+            if HAS_CTK:
+                for cb in checkboxes:
+                    cb.deselect()
+
+        self._button(toggle_frame, text="Select All", fg_color="#475569",
+                     hover_color="#334155", command=select_all
+                     ).pack(side="left", expand=True, fill="x", padx=(0, 6))
+
+        self._button(toggle_frame, text="Deselect All", fg_color="#475569",
+                     hover_color="#334155", command=deselect_all
+                     ).pack(side="left", expand=True, fill="x", padx=(6, 0))
+
+        # Run buttons
         btn_frame = self._frame(popup)
         btn_frame.pack(fill="x", padx=16, pady=(12, 12))
 
@@ -568,8 +604,18 @@ class ZaloServerApp:
                          headers={"Content-Type": "application/json"})
             resp = urlopen(req, timeout=10)
             data = json.loads(resp.read().decode())
-            msg = data.get("message", data.get("status", "OK"))
-            self.root.after(0, self._set_footer, f"Trigger: {msg}")
+            status = data.get("status", "")
+            msg = data.get("message", status)
+            # Show clear warning for no_content
+            if status == "no_content":
+                self.root.after(0, self._set_footer,
+                               "\u26A0 API has no content to post")
+                self.root.after(0, self._show_info, "No Content",
+                               "Content API returned no data.\n\n"
+                               "Please check your content source\n"
+                               "(n8n workflow / webhook) and try again.")
+            else:
+                self.root.after(0, self._set_footer, f"Trigger: {msg}")
         except Exception as exc:
             self.root.after(0, self._set_footer, f"Trigger failed: {exc}")
         finally:
@@ -632,6 +678,10 @@ class ZaloServerApp:
     def _show_error(self, title: str, msg: str):
         from tkinter import messagebox
         messagebox.showerror(title, msg)
+
+    def _show_info(self, title: str, msg: str):
+        from tkinter import messagebox
+        messagebox.showwarning(title, msg)
 
     # ---------------------------------------------------------------
     # Run
