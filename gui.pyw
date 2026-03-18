@@ -134,24 +134,75 @@ def _verify_started(pid: int):
         messagebox.showerror("Server crashed", f"Python: {PYTHON}\n\nLast log:\n{tail}")
 
 
+def _find_pids_on_port() -> list[int]:
+    """Find all PIDs listening on SERVER_PORT via netstat."""
+    pids = set()
+    try:
+        r = subprocess.run(
+            ["netstat", "-ano", "-p", "TCP"],
+            capture_output=True, text=True, timeout=10,
+            creationflags=subprocess.CREATE_NO_WINDOW,
+        )
+        for line in r.stdout.splitlines():
+            if f":{SERVER_PORT}" in line and "LISTENING" in line:
+                parts = line.split()
+                if parts:
+                    try:
+                        pids.add(int(parts[-1]))
+                    except ValueError:
+                        pass
+    except Exception:
+        pass
+    return list(pids)
+
+
 def stop_server():
     global server_process
-    pid = server_process.pid if server_process else _read_pid()
+    update_status("Stopping...", "orange")
+    root.update()
 
-    if pid is None or not _is_running(pid):
+    # Collect all PIDs to kill: saved PID + port listeners
+    pids_to_kill = set()
+    if server_process is not None:
+        pids_to_kill.add(server_process.pid)
+    saved_pid = _read_pid()
+    if saved_pid:
+        pids_to_kill.add(saved_pid)
+    pids_to_kill.update(_find_pids_on_port())
+
+    if not pids_to_kill and not _server_responding():
         _cleanup_stopped()
         return
 
-    update_status("Stopping...", "orange")
-    try:
-        subprocess.run(
-            ["taskkill", "/F", "/PID", str(pid), "/T"],
-            creationflags=subprocess.CREATE_NO_WINDOW,
-            capture_output=True,
-        )
-    except Exception:
-        pass
-    root.after(2000, _cleanup_stopped)
+    for pid in pids_to_kill:
+        try:
+            subprocess.run(
+                ["taskkill", "/F", "/PID", str(pid), "/T"],
+                creationflags=subprocess.CREATE_NO_WINDOW,
+                capture_output=True,
+            )
+        except Exception:
+            pass
+
+    root.after(2000, _verify_stopped)
+
+
+def _verify_stopped():
+    """Check if server actually stopped, retry kill if still alive."""
+    if _server_responding():
+        # Still alive — try killing port listeners again
+        for pid in _find_pids_on_port():
+            try:
+                subprocess.run(
+                    ["taskkill", "/F", "/PID", str(pid), "/T"],
+                    creationflags=subprocess.CREATE_NO_WINDOW,
+                    capture_output=True,
+                )
+            except Exception:
+                pass
+        root.after(2000, _cleanup_stopped)
+    else:
+        _cleanup_stopped()
 
 
 def _cleanup_stopped():
