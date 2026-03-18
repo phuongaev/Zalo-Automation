@@ -31,9 +31,18 @@ class ContentApiClient:
             timeout=cfg.request_timeout_seconds,
         )
         if resp.status_code == 204:
+            log.info("Content API returned 204 No Content")
             return None
         resp.raise_for_status()
-        data = resp.json()
+        body_text = resp.text.strip()
+        if not body_text:
+            log.warning("Content API returned empty body (status=%s)", resp.status_code)
+            return None
+        try:
+            data = resp.json()
+        except Exception:
+            log.warning("Content API returned non-JSON body: %s", body_text[:200])
+            return None
         # API may return a list (array) — use first element
         if isinstance(data, list):
             if not data:
