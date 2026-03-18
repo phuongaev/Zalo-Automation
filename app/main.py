@@ -115,3 +115,15 @@ def job_status() -> dict:
             resp["error"] = _current_job["error"]
 
     return resp
+
+
+@app.post("/reset")
+def reset_job() -> dict:
+    """Force reset busy state. Use when a job is stuck."""
+    global _current_job
+    with _job_lock:
+        if _current_job is None:
+            return {"ok": True, "message": "No job to reset"}
+        was_running = _current_job["thread"].is_alive()
+        _current_job = None
+    return {"ok": True, "message": f"Job reset (was_running={was_running}). You can now trigger again."}

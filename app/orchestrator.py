@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import logging
 import random
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -19,6 +21,7 @@ from app.zalo_automation import ZaloAutomation
 
 COMPLETION_WEBHOOK_URL = "https://go.dungmoda.com/webhook/zalo-mkt-dang-bai-len-tuong-done"
 MAX_RETRIES = 2  # total attempts = 1 + MAX_RETRIES
+ACCOUNT_TIMEOUT = 300  # 5 minutes max per account attempt
 
 log = logging.getLogger(__name__)
 
@@ -174,6 +177,39 @@ class TriggerRunService:
         finally:
             self.storage.cleanup_dir(job_dir)
 
+    def _run_account_with_timeout(self, account: AccountConfig, text: str, image_urls: list[str], post_id: str) -> AccountRunResult:
+        """Run _run_account with a timeout. Returns failure result if timeout exceeded."""
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(self._run_account, account, text, image_urls, post_id)
+            try:
+                return future.result(timeout=ACCOUNT_TIMEOUT)
+            except FuturesTimeoutError:
+                log.error("[%s] Account run timed out after %ds", account.account_id, ACCOUNT_TIMEOUT)
+                # Force kill emulator to unblock
+                if not self.cfg.dry_run:
+                    try:
+                        self.ldplayer.quit(account)
+                    except Exception:
+                        pass
+                return AccountRunResult(
+                    account_id=account.account_id,
+                    adb_serial=account.adb_serial,
+                    emulator_index=account.emulator_index,
+                    ok=False,
+                    status="timeout",
+                    message=f"Timed out after {ACCOUNT_TIMEOUT}s",
+                )
+            except Exception as exc:
+                log.exception("[%s] Unexpected error in timeout wrapper", account.account_id)
+                return AccountRunResult(
+                    account_id=account.account_id,
+                    adb_serial=account.adb_serial,
+                    emulator_index=account.emulator_index,
+                    ok=False,
+                    status="failed",
+                    message=str(exc),
+                )
+
     def run_once(self, account_ids: list[str] | None = None) -> dict:
         payload = self.api.fetch_post()
         if payload is None:
@@ -196,14 +232,15 @@ class TriggerRunService:
                 i + 1, len(accounts), account.account_id, account.emulator_index,
             )
 
-            # Retry loop
+            # Retry loop with per-account timeout
             final_result: AccountRunResult | None = None
             total_attempts = 1 + MAX_RETRIES
 
             for attempt in range(1, total_attempts + 1):
-                log.info("[%s] Attempt %d/%d", account.account_id, attempt, total_attempts)
+                log.info("[%s] Attempt %d/%d (timeout=%ds)", account.account_id, attempt, total_attempts, ACCOUNT_TIMEOUT)
 
-                result = self._run_account(account, payload.text, payload.images, payload.post_id)
+                # Run with timeout to prevent hanging forever
+                result = self._run_account_with_timeout(account, payload.text, payload.images, payload.post_id)
                 final_result = result
 
                 if result.ok:
