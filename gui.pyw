@@ -536,17 +536,11 @@ class ZaloServerApp:
             if not selected:
                 self._set_footer("No accounts selected")
                 return
-            self._set_btn_state(self.btn_trigger, False)
-            self._set_footer(f"Triggering {len(selected)} accounts...")
-            threading.Thread(target=self._trigger_worker,
-                           args=(selected,), daemon=True).start()
+            self._do_trigger(selected)
 
         def run_all():
             popup.destroy()
-            self._set_btn_state(self.btn_trigger, False)
-            self._set_footer(f"Triggering all {len(enabled)} accounts...")
-            threading.Thread(target=self._trigger_worker,
-                           args=(None,), daemon=True).start()
+            self._do_trigger(None)
 
         self._button(btn_frame, text="Run Selected", fg_color=CLR_BLUE,
                      hover_color="#0055CC", command=run_selected
@@ -555,6 +549,14 @@ class ZaloServerApp:
         self._button(btn_frame, text="Run All", fg_color=CLR_GREEN,
                      hover_color="#16A34A", command=run_all
                      ).pack(side="left", expand=True, fill="x", padx=(6, 0))
+
+    def _do_trigger(self, account_ids: list[str] | None):
+        """Common trigger logic — disable button, update footer, launch worker."""
+        count = len(account_ids) if account_ids else "all"
+        self._set_btn_state(self.btn_trigger, False)
+        self._set_footer(f"Triggering {count} accounts...")
+        threading.Thread(target=self._trigger_worker,
+                        args=(account_ids,), daemon=True).start()
 
     def _trigger_worker(self, account_ids: list[str] | None = None):
         try:
