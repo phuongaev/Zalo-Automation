@@ -7,6 +7,7 @@ All blocking operations run on background threads — UI never freezes.
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import threading
@@ -15,6 +16,8 @@ import tkinter as tk
 from pathlib import Path
 from urllib.error import URLError
 from urllib.request import Request, urlopen
+
+import yaml
 
 # ---------------------------------------------------------------------------
 # Try customtkinter, fallback to tkinter
@@ -33,6 +36,7 @@ RUN_SCRIPT = str(APP_DIR / "run.py")
 PID_FILE = APP_DIR / ".server.pid"
 LOG_FILE = APP_DIR / "logs" / "server_stderr.log"
 ICON_FILE = APP_DIR / "assets" / "zalo_icon.ico"
+CONFIG_FILE = APP_DIR / "config" / "accounts.yaml"
 
 _venv_python = APP_DIR / ".venv" / "Scripts" / "python.exe"
 PYTHON = str(_venv_python) if _venv_python.exists() else sys.executable
@@ -43,15 +47,15 @@ BASE_URL = f"http://127.0.0.1:{SERVER_PORT}"
 # ---------------------------------------------------------------------------
 # Color palette
 # ---------------------------------------------------------------------------
-CLR_BLUE = "#0068FF"       # Zalo blue
-CLR_GREEN = "#22C55E"      # Running
-CLR_RED = "#EF4444"        # Stopped
-CLR_ORANGE = "#F59E0B"     # Loading
-CLR_GRAY = "#6B7280"       # Muted text
-CLR_BG = "#1E1E2E"         # Dark background
-CLR_CARD = "#2A2A3C"       # Card background
-CLR_TEXT = "#E2E8F0"       # Main text
-CLR_MUTED = "#94A3B8"      # Muted text
+CLR_BLUE = "#0068FF"
+CLR_GREEN = "#22C55E"
+CLR_RED = "#EF4444"
+CLR_ORANGE = "#F59E0B"
+CLR_GRAY = "#6B7280"
+CLR_BG = "#1E1E2E"
+CLR_CARD = "#2A2A3C"
+CLR_TEXT = "#E2E8F0"
+CLR_MUTED = "#94A3B8"
 
 
 # ===================================================================
@@ -128,6 +132,17 @@ def _find_pids_on_port() -> list[int]:
     return list(pids)
 
 
+def _load_accounts() -> list[dict]:
+    """Load account list from config/accounts.yaml."""
+    if not CONFIG_FILE.exists():
+        return []
+    try:
+        raw = yaml.safe_load(CONFIG_FILE.read_text(encoding="utf-8")) or {}
+        return raw.get("accounts", [])
+    except Exception:
+        return []
+
+
 # ===================================================================
 # App class
 # ===================================================================
@@ -151,10 +166,9 @@ class ZaloServerApp:
             self.root.configure(bg=CLR_BG)
 
         self.root.title("Zalo Auto Post Server")
-        self.root.geometry("420x310")
+        self.root.geometry("420x370")
         self.root.resizable(False, False)
 
-        # Icon
         if ICON_FILE.exists():
             try:
                 self.root.iconbitmap(str(ICON_FILE))
@@ -199,19 +213,19 @@ class ZaloServerApp:
                                       font=("Segoe UI", 9), text_color=CLR_MUTED)
         self.job_label.pack(fill="x", padx=16, pady=(0, 12))
 
-        # --- Main buttons ---
-        btn_row = self._frame(self.root)
-        btn_row.pack(fill="x", padx=20, pady=(14, 0))
+        # --- Row 1: Start / Stop ---
+        btn_row1 = self._frame(self.root)
+        btn_row1.pack(fill="x", padx=20, pady=(14, 0))
 
-        self.btn_start = self._button(btn_row, text="\u25B6  Start", fg_color=CLR_GREEN,
+        self.btn_start = self._button(btn_row1, text="\u25B6  Start", fg_color=CLR_GREEN,
                                        hover_color="#16A34A", command=self._on_start)
         self.btn_start.pack(side="left", expand=True, fill="x", padx=(0, 6))
 
-        self.btn_stop = self._button(btn_row, text="\u25A0  Stop", fg_color=CLR_RED,
+        self.btn_stop = self._button(btn_row1, text="\u25A0  Stop", fg_color=CLR_RED,
                                       hover_color="#DC2626", command=self._on_stop)
         self.btn_stop.pack(side="left", expand=True, fill="x", padx=(6, 0))
 
-        # --- Secondary buttons ---
+        # --- Row 2: Trigger / Logs ---
         btn_row2 = self._frame(self.root)
         btn_row2.pack(fill="x", padx=20, pady=(8, 0))
 
@@ -224,6 +238,20 @@ class ZaloServerApp:
                                       fg_color="#475569", hover_color="#334155",
                                       command=self._on_open_logs)
         self.btn_logs.pack(side="left", expand=True, fill="x", padx=(6, 0))
+
+        # --- Row 3: Reset / Clear ---
+        btn_row3 = self._frame(self.root)
+        btn_row3.pack(fill="x", padx=20, pady=(8, 0))
+
+        self.btn_reset = self._button(btn_row3, text="\U0001F504  Reset",
+                                       fg_color="#7C3AED", hover_color="#6D28D9",
+                                       command=self._on_reset)
+        self.btn_reset.pack(side="left", expand=True, fill="x", padx=(0, 6))
+
+        self.btn_clear = self._button(btn_row3, text="\U0001F5D1  Clear",
+                                       fg_color="#78716C", hover_color="#57534E",
+                                       command=self._on_clear)
+        self.btn_clear.pack(side="left", expand=True, fill="x", padx=(6, 0))
 
         # --- Footer ---
         self.footer = self._label(self.root, text="", font=("Segoe UI", 9),
@@ -239,15 +267,13 @@ class ZaloServerApp:
         if HAS_CTK:
             return ctk.CTkFrame(parent, fg_color=fg_color or "transparent",
                                 corner_radius=corner_radius)
-        f = tk.Frame(parent, bg=fg_color or CLR_BG)
-        return f
+        return tk.Frame(parent, bg=fg_color or CLR_BG)
 
     def _label(self, parent, text="", font=None, text_color=None):
         if HAS_CTK:
             return ctk.CTkLabel(parent, text=text, font=font, text_color=text_color)
-        lbl = tk.Label(parent, text=text, font=font, fg=text_color or CLR_TEXT,
-                       bg=parent.cget("bg") if hasattr(parent, "cget") else CLR_BG)
-        return lbl
+        return tk.Label(parent, text=text, font=font, fg=text_color or CLR_TEXT,
+                        bg=parent.cget("bg") if hasattr(parent, "cget") else CLR_BG)
 
     def _button(self, parent, text="", fg_color=None, hover_color=None, command=None):
         if HAS_CTK:
@@ -255,10 +281,19 @@ class ZaloServerApp:
                                  hover_color=hover_color, command=command,
                                  font=("Segoe UI", 11, "bold"), height=36,
                                  corner_radius=8, text_color="white")
-        btn = tk.Button(parent, text=text, bg=fg_color, fg="white",
-                        activebackground=hover_color, font=("Segoe UI", 10, "bold"),
-                        relief="flat", command=command, height=1)
-        return btn
+        return tk.Button(parent, text=text, bg=fg_color, fg="white",
+                         activebackground=hover_color, font=("Segoe UI", 10, "bold"),
+                         relief="flat", command=command, height=1)
+
+    def _checkbox(self, parent, text="", variable=None):
+        if HAS_CTK:
+            return ctk.CTkCheckBox(parent, text=text, variable=variable,
+                                    font=("Segoe UI", 11), text_color=CLR_TEXT,
+                                    fg_color=CLR_BLUE, hover_color="#0055CC")
+        return tk.Checkbutton(parent, text=text, variable=variable,
+                              font=("Segoe UI", 10), fg=CLR_TEXT, bg=CLR_CARD,
+                              selectcolor=CLR_BG, activebackground=CLR_CARD,
+                              activeforeground=CLR_TEXT)
 
     # ---------------------------------------------------------------
     # Status management
@@ -278,12 +313,12 @@ class ZaloServerApp:
             self.status_text.config(text=f"  {label}")
             self.job_label.config(text=job_text)
 
-        # Enable/disable buttons
         is_running = state == "running"
         is_loading = state == "loading"
         self._set_btn_state(self.btn_start, not is_running and not is_loading)
         self._set_btn_state(self.btn_stop, is_running)
         self._set_btn_state(self.btn_trigger, is_running)
+        self._set_btn_state(self.btn_reset, is_running)
 
     def _set_btn_state(self, btn, enabled: bool):
         if HAS_CTK:
@@ -343,15 +378,12 @@ class ZaloServerApp:
         if _server_responding():
             self.root.after(0, self._update_status, "running", "")
             return
-
         existing_pid = _read_pid()
         if _is_running(existing_pid):
             self.root.after(0, self._update_status, "running", "")
             return
-
         LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
         LOG_FILE.write_text("")
-
         self._do_start()
 
     def _do_start(self):
@@ -371,14 +403,12 @@ class ZaloServerApp:
             self.root.after(0, self._update_status, "stopped", "")
             return
 
-        # Wait up to 10s for server to respond
         for _ in range(20):
             time.sleep(0.5)
             if _server_responding():
                 self.root.after(0, self._update_status, "running", "Server started")
                 return
 
-        # Check if crashed due to missing deps
         log_text = ""
         if LOG_FILE.exists():
             log_text = LOG_FILE.read_text(encoding="utf-8", errors="replace").strip()
@@ -388,7 +418,7 @@ class ZaloServerApp:
             ok, output = _install_deps()
             if ok:
                 LOG_FILE.write_text("")
-                self._do_start()  # retry
+                self._do_start()
                 return
             else:
                 self.root.after(0, self._show_error, "Install failed", output[-500:])
@@ -453,17 +483,86 @@ class ZaloServerApp:
         self._update_status("stopped", "Server stopped")
 
     # ---------------------------------------------------------------
-    # Trigger
+    # Trigger — popup with account selection
     # ---------------------------------------------------------------
     def _on_trigger(self):
-        self._set_btn_state(self.btn_trigger, False)
-        self._set_footer("Sending trigger...")
-        threading.Thread(target=self._trigger_worker, daemon=True).start()
+        accounts = _load_accounts()
+        enabled = [a for a in accounts if a.get("enabled", False)]
 
-    def _trigger_worker(self):
+        if not enabled:
+            self._set_footer("No enabled accounts in config")
+            return
+
+        # Create popup window
+        if HAS_CTK:
+            popup = ctk.CTkToplevel(self.root)
+        else:
+            popup = tk.Toplevel(self.root)
+            popup.configure(bg=CLR_BG)
+
+        popup.title("Select Accounts to Trigger")
+        popup.geometry("340x%d" % min(400, 120 + len(enabled) * 36))
+        popup.resizable(False, False)
+        popup.transient(self.root)
+        popup.grab_set()
+
+        if ICON_FILE.exists():
+            try:
+                popup.iconbitmap(str(ICON_FILE))
+            except Exception:
+                pass
+
+        # Header
+        self._label(popup, text="Select accounts:", font=("Segoe UI", 12, "bold"),
+                    text_color=CLR_TEXT).pack(padx=16, pady=(12, 8), anchor="w")
+
+        # Checkboxes
+        check_vars: list[tuple[str, tk.BooleanVar]] = []
+        for acc in enabled:
+            aid = acc.get("account_id", "?")
+            idx = acc.get("emulator_index", "?")
+            var = tk.BooleanVar(value=True)
+            cb = self._checkbox(popup, text=f"{aid}  (index={idx})", variable=var)
+            cb.pack(padx=24, pady=2, anchor="w")
+            check_vars.append((aid, var))
+
+        # Buttons
+        btn_frame = self._frame(popup)
+        btn_frame.pack(fill="x", padx=16, pady=(12, 12))
+
+        def run_selected():
+            selected = [aid for aid, var in check_vars if var.get()]
+            popup.destroy()
+            if not selected:
+                self._set_footer("No accounts selected")
+                return
+            self._set_btn_state(self.btn_trigger, False)
+            self._set_footer(f"Triggering {len(selected)} accounts...")
+            threading.Thread(target=self._trigger_worker,
+                           args=(selected,), daemon=True).start()
+
+        def run_all():
+            popup.destroy()
+            self._set_btn_state(self.btn_trigger, False)
+            self._set_footer(f"Triggering all {len(enabled)} accounts...")
+            threading.Thread(target=self._trigger_worker,
+                           args=(None,), daemon=True).start()
+
+        self._button(btn_frame, text="Run Selected", fg_color=CLR_BLUE,
+                     hover_color="#0055CC", command=run_selected
+                     ).pack(side="left", expand=True, fill="x", padx=(0, 6))
+
+        self._button(btn_frame, text="Run All", fg_color=CLR_GREEN,
+                     hover_color="#16A34A", command=run_all
+                     ).pack(side="left", expand=True, fill="x", padx=(6, 0))
+
+    def _trigger_worker(self, account_ids: list[str] | None = None):
         try:
+            body = {}
+            if account_ids is not None:
+                body["account_ids"] = account_ids
             req = Request(f"{BASE_URL}/trigger", method="POST",
-                         data=b"{}",
+                         data=json.dumps(body).encode(),
                          headers={"Content-Type": "application/json"})
             resp = urlopen(req, timeout=10)
             data = json.loads(resp.read().decode())
@@ -473,6 +572,46 @@ class ZaloServerApp:
             self.root.after(0, self._set_footer, f"Trigger failed: {exc}")
         finally:
             self.root.after(0, self._set_btn_state, self.btn_trigger, True)
+
+    # ---------------------------------------------------------------
+    # Reset trigger (POST /reset)
+    # ---------------------------------------------------------------
+    def _on_reset(self):
+        self._set_footer("Resetting...")
+        threading.Thread(target=self._reset_worker, daemon=True).start()
+
+    def _reset_worker(self):
+        try:
+            req = Request(f"{BASE_URL}/reset", method="POST",
+                         data=b"", headers={"Content-Type": "application/json"})
+            resp = urlopen(req, timeout=5)
+            data = json.loads(resp.read().decode())
+            msg = data.get("message", "OK")
+            self.root.after(0, self._set_footer, f"Reset: {msg}")
+        except Exception as exc:
+            self.root.after(0, self._set_footer, f"Reset failed: {exc}")
+
+    # ---------------------------------------------------------------
+    # Clear logs + screenshots
+    # ---------------------------------------------------------------
+    def _on_clear(self):
+        self._set_footer("Clearing...")
+        threading.Thread(target=self._clear_worker, daemon=True).start()
+
+    def _clear_worker(self):
+        cleared = []
+        for dirname in ["logs", "screenshots"]:
+            d = APP_DIR / dirname
+            if d.exists():
+                try:
+                    count = sum(1 for _ in d.rglob("*") if _.is_file())
+                    shutil.rmtree(d)
+                    d.mkdir(parents=True, exist_ok=True)
+                    cleared.append(f"{dirname}({count})")
+                except Exception:
+                    cleared.append(f"{dirname}(err)")
+        msg = f"Cleared: {', '.join(cleared)}" if cleared else "Nothing to clear"
+        self.root.after(0, self._set_footer, msg)
 
     # ---------------------------------------------------------------
     # Open logs
@@ -489,13 +628,8 @@ class ZaloServerApp:
     # Error dialog
     # ---------------------------------------------------------------
     def _show_error(self, title: str, msg: str):
-        if HAS_CTK:
-            # CTkMessagebox not built-in, use tk messagebox
-            from tkinter import messagebox
-            messagebox.showerror(title, msg)
-        else:
-            from tkinter import messagebox
-            messagebox.showerror(title, msg)
+        from tkinter import messagebox
+        messagebox.showerror(title, msg)
 
     # ---------------------------------------------------------------
     # Run
