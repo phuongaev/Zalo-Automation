@@ -21,6 +21,23 @@ _venv_python = APP_DIR / ".venv" / "Scripts" / "python.exe"
 PYTHON = str(_venv_python) if _venv_python.exists() else sys.executable
 
 server_process: subprocess.Popen | None = None
+PIP = str(Path(PYTHON).parent / "pip.exe")
+
+
+def _install_deps() -> tuple[bool, str]:
+    """Install project dependencies. Returns (success, output)."""
+    try:
+        r = subprocess.run(
+            [PYTHON, "-m", "pip", "install", "-e", str(APP_DIR)],
+            cwd=str(APP_DIR),
+            capture_output=True,
+            text=True,
+            timeout=300,
+            creationflags=subprocess.CREATE_NO_WINDOW,
+        )
+        return r.returncode == 0, r.stdout + r.stderr
+    except Exception as exc:
+        return False, str(exc)
 
 
 def _read_pid() -> int | None:
@@ -45,15 +62,18 @@ def _is_running(pid: int | None = None) -> bool:
 
 
 def start_server():
-    global server_process
     existing_pid = _read_pid()
     if _is_running(existing_pid):
         update_status("Running", "green")
         return
-
     LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
-    stderr_fh = open(LOG_FILE, "a", encoding="utf-8")
+    LOG_FILE.write_text("")  # clear old log
+    _do_start()
 
+
+def _do_start():
+    global server_process
+    stderr_fh = open(LOG_FILE, "a", encoding="utf-8")
     try:
         proc = subprocess.Popen(
             [PYTHON, RUN_SCRIPT],
@@ -65,7 +85,6 @@ def start_server():
         server_process = proc
         PID_FILE.write_text(str(proc.pid))
         update_status("Starting...", "orange")
-        # Check after 3 seconds if process is still alive
         root.after(3000, _verify_started, proc.pid)
     except Exception as exc:
         messagebox.showerror("Error", f"Cannot start server:\n{exc}")
@@ -74,13 +93,31 @@ def start_server():
 def _verify_started(pid: int):
     if _is_running(pid):
         update_status("Running", "green")
-    else:
-        update_status("Stopped", "red")
-        # Show last few lines of stderr log
-        if LOG_FILE.exists():
-            lines = LOG_FILE.read_text(encoding="utf-8", errors="replace").strip().splitlines()
-            tail = "\n".join(lines[-15:])
-            messagebox.showerror("Server crashed", f"Python: {PYTHON}\n\nLast log:\n{tail}")
+        return
+
+    # Server crashed — check if it's a missing module error
+    log_text = ""
+    if LOG_FILE.exists():
+        log_text = LOG_FILE.read_text(encoding="utf-8", errors="replace").strip()
+
+    if "ModuleNotFoundError" in log_text or "No module named" in log_text:
+        update_status("Installing deps...", "orange")
+        root.update()
+        ok, output = _install_deps()
+        if ok:
+            # Retry starting server after install
+            LOG_FILE.write_text("")  # clear old log
+            _do_start()
+            return
+        else:
+            messagebox.showerror("Install failed", f"pip install failed:\n{output[-500:]}")
+            update_status("Stopped", "red")
+            return
+
+    update_status("Stopped", "red")
+    if log_text:
+        tail = "\n".join(log_text.splitlines()[-15:])
+        messagebox.showerror("Server crashed", f"Python: {PYTHON}\n\nLast log:\n{tail}")
 
 
 def stop_server():
