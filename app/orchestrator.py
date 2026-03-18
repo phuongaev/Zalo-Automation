@@ -71,6 +71,9 @@ class TriggerRunService:
                 adb.scan_media_root(remote_dir)
                 adb.dismiss_ads_and_prepare_home()
                 adb.start_app(self.cfg.zalo_package)
+                # Wait for Zalo to fully load UI before checking login state
+                log.info("[%s] Waiting 8s for Zalo UI to load...", account.account_id)
+                time.sleep(8)
 
             login_state = auto.check_login_state()
             if login_state != "logged_in":

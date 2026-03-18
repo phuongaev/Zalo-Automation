@@ -9,6 +9,8 @@ selectors:
     - text: "Số điện thoại"
     - text: "Số điện thoại hoặc tên đăng nhập"
     - text: "Mật khẩu"
+  login_definitive_marker:
+    - text: "Lấy lại mật khẩu"
   welcome_login_button:
     - resourceId: "com.zing.zalo:id/btnLogin"
     - text: "Đăng nhập"

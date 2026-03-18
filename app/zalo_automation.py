@@ -124,6 +124,10 @@ class ZaloAutomation:
         if self.dry_run:
             return "logged_in"
         self.ensure_device()
+
+        # Wait for UI to fully load before checking
+        time.sleep(3)
+
         if self._exists_any(self.selectors.get("home_feed_markers", [])):
             return "logged_in"
 
@@ -132,8 +136,18 @@ class ZaloAutomation:
         if has_welcome_login and has_welcome_register:
             return "logged_out"
 
-        if self._exists_any(self.selectors.get("login_markers", [])):
+        # Definitive login marker: "Lấy lại mật khẩu" only appears on the login screen
+        has_definitive = self._exists_any(self.selectors.get("login_definitive_marker", []))
+        if has_definitive:
+            log.info("Definitive login marker found ('Lấy lại mật khẩu') — confirmed login screen")
             return "logged_out"
+
+        # Old login_markers alone are NOT reliable (e.g. "Đăng nhập" can appear elsewhere)
+        # Only use them if the definitive marker is also present (already handled above)
+        # Without definitive marker, treat as unknown to avoid false login attempts
+        if self._exists_any(self.selectors.get("login_markers", [])):
+            log.warning("login_markers found but definitive marker missing — treating as unknown to be safe")
+
         return "unknown"
 
     def login_if_needed(self, phone: str, password: str, adb=None) -> AutomationResult:
@@ -143,6 +157,18 @@ class ZaloAutomation:
         state = self.check_login_state()
         if state == "logged_in":
             return AutomationResult(True, "success", "already logged in")
+
+        # If state is unknown, wait longer and re-check — UI may not have loaded yet
+        if state == "unknown":
+            log.info("Login state unknown, waiting 5s and re-checking...")
+            time.sleep(5)
+            state = self.check_login_state()
+            if state == "logged_in":
+                return AutomationResult(True, "success", "already logged in (after retry)")
+            if state == "unknown":
+                # Still unknown after retry — assume logged in to avoid false login attempts
+                log.warning("Login state still unknown after retry — assuming logged in to be safe")
+                return AutomationResult(True, "success", "assumed logged in (state unknown)")
 
         has_welcome_login = self._exists_any(self.selectors.get("welcome_login_button", []))
         has_welcome_register = self._exists_any(self.selectors.get("welcome_register_button", []))
